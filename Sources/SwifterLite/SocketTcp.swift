@@ -30,6 +30,22 @@ extension Socket {
             Socket.close(socketFileDescriptor)
             throw SocketError.socketSettingReUseAddrFailed(details)
         }
+        
+        // Set SO_REUSEPORT to allow port reuse
+        if setsockopt(socketFileDescriptor, SOL_SOCKET, SO_REUSEPORT, &value, socklen_t(MemoryLayout<Int32>.size)) == -1 {
+            let details = ErrNumString.description()
+            Socket.close(socketFileDescriptor)
+            throw SocketError.socketSettingReUseAddrFailed("Failed to set SO_REUSEPORT: \(details)")
+        }
+        
+        // Set SO_LINGER to ensure ports are freed immediately
+        var l = linger(l_onoff: 1, l_linger: 0)
+        if setsockopt(socketFileDescriptor, SOL_SOCKET, SO_LINGER, &l, socklen_t(MemoryLayout<linger>.size)) == -1 {
+            let details = ErrNumString.description()
+            Socket.close(socketFileDescriptor)
+            throw SocketError.socketSettingReUseAddrFailed("Failed to set SO_LINGER: \(details)")
+        }
+        
         Socket.setNoSigPipe(socketFileDescriptor)
         
         var bindResult: Int32 = -1

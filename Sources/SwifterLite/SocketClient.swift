@@ -19,6 +19,15 @@ extension Socket {
             
             if clientSocket != -1 {
                 Socket.setNoSigPipe(clientSocket)
+                
+                // Set SO_REUSEPORT to allow port reuse
+                var value: Int32 = 1
+                setsockopt(clientSocket, SOL_SOCKET, SO_REUSEPORT, &value, socklen_t(MemoryLayout<Int32>.size))
+                
+                // Set SO_LINGER to ensure ports are freed immediately
+                var l = linger(l_onoff: 1, l_linger: 0)
+                setsockopt(clientSocket, SOL_SOCKET, SO_LINGER, &l, socklen_t(MemoryLayout<linger>.size))
+                
                 return Socket(socketFileDescriptor: clientSocket)
             } else {
                 throw SocketError.acceptFailed(ErrNumString.description())

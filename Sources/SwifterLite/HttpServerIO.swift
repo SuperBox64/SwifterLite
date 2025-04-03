@@ -26,6 +26,7 @@ open class HttpServerIO {
     public weak var delegate: HttpServerIODelegate?
     private var socket = Socket(socketFileDescriptor: -1)
     private var sockets = Set<Socket>()
+    private let socketsLock = NSLock()
     
     public enum HttpServerIOState: Int32 {
         case starting
@@ -47,7 +48,7 @@ open class HttpServerIO {
         }
     }
         
-    private let queue = DispatchQueue.main
+    private let queue = DispatchQueue(label: "com.starplayrx.swifterlite.httpserverio", attributes: .concurrent)
 
     public func port() throws -> Int {
        Int(try socket.port())
@@ -64,16 +65,17 @@ open class HttpServerIO {
             DispatchQueue.global(qos: priority).async { [self] in
                 while let socket = try? socket.acceptClientSocket() {
                     DispatchQueue.global(qos: priority).async { [self] in
-                        
-                        queue.async {
-                            self.sockets.insert(socket)
-                        }
+                        // Add socket to set with proper locking
+                        self.socketsLock.lock()
+                        self.sockets.insert(socket)
+                        self.socketsLock.unlock()
                         
                         handleConnection(socket)
                         
-                        queue.async {
-                            self.sockets.remove(socket)
-                        }
+                        // Remove socket from set with proper locking
+                        self.socketsLock.lock()
+                        self.sockets.remove(socket)
+                        self.socketsLock.unlock()
                     }
                 }
                 stop()
@@ -85,11 +87,18 @@ open class HttpServerIO {
         autoreleasepool {
             self.state = .stopping
 
-            for socket in self.sockets {
+            // Lock access to the sockets collection
+            socketsLock.lock()
+            let socketsCopy = self.sockets // Make a copy to avoid mutation during iteration
+            self.sockets.removeAll(keepingCapacity: false)
+            socketsLock.unlock()
+            
+            // Close all client sockets
+            for socket in socketsCopy {
                 socket.close()
             }
             
-            self.sockets.removeAll(keepingCapacity: false)
+            // Close the server socket
             socket.close()
             self.state = .stopped
         }
